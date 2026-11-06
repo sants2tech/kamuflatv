@@ -3520,7 +3520,8 @@ document.addEventListener('keydown',e=>{
     e.preventDefault();e.stopPropagation();showPlayerControls($('btnChannelGrid'));return;
   }
   const direction=tvDirection(e);
-  if(playerOpen&&playerEPGVisible&&state.currentIsLive&&(direction==='ArrowLeft'||direction==='ArrowRight')){
+  const focusInPlayerCategories=!!(focused&&focused.closest&&focused.closest('#pepgCategories'));
+  if(playerOpen&&playerEPGVisible&&state.currentIsLive&&!focusInPlayerCategories&&(direction==='ArrowLeft'||direction==='ArrowRight')){
     e.preventDefault();e.stopPropagation();shiftPlayerEPG(direction==='ArrowLeft'?-3:3);return;
   }
   if(playerOpen&&!playerEPGVisible&&!playerControlsActive&&(direction==='ArrowUp'||direction==='ArrowDown')&&state.currentIsLive&&!playerLocked){e.preventDefault();e.stopPropagation();zapChannel(direction==='ArrowUp'?-1:1);return;}
