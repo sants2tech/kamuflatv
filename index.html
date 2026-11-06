@@ -3475,6 +3475,19 @@ function tvMainEntry(){
   return $('conteudos').querySelector('.card[tabindex="0"],button,a[href]')||document.querySelector('header button,header input');
 }
 
+function movePlayerCategoryFocus(direction,current){
+  const container=$('pepgCategories');
+  if(!container)return false;
+  const buttons=[...container.querySelectorAll('button:not([disabled])')];
+  if(!buttons.length)return false;
+  const active=current&&current.closest&&current.closest('#pepgCategories button');
+  const index=Math.max(0,buttons.indexOf(active));
+  const nextIndex=Math.max(0,Math.min(buttons.length-1,index+(direction==='ArrowLeft'?-1:1)));
+  const next=buttons[nextIndex];
+  if(next){try{next.focus({preventScroll:true});}catch(_){next.focus();}next.scrollIntoView({block:'nearest',inline:'nearest'});return true;}
+  return false;
+}
+
 function tvMoveFocus(direction){
   const nodes = tvVisibleFocusables();
   if(!nodes.length) return false;
@@ -3520,6 +3533,11 @@ document.addEventListener('keydown',e=>{
     e.preventDefault();e.stopPropagation();showPlayerControls($('btnChannelGrid'));return;
   }
   const direction=tvDirection(e);
+  const eventCategoryButton=e.target&&e.target.closest&&e.target.closest('#pepgCategories button');
+  if(playerOpen&&playerEPGVisible&&state.currentIsLive&&eventCategoryButton&&(direction==='ArrowLeft'||direction==='ArrowRight')){
+    e.preventDefault();e.stopPropagation();if(e.stopImmediatePropagation)e.stopImmediatePropagation();
+    movePlayerCategoryFocus(direction,eventCategoryButton);return;
+  }
   const focusInPlayerCategories=!!(focused&&focused.closest&&focused.closest('#pepgCategories'));
   if(playerOpen&&playerEPGVisible&&state.currentIsLive&&!focusInPlayerCategories&&(direction==='ArrowLeft'||direction==='ArrowRight')){
     e.preventDefault();e.stopPropagation();shiftPlayerEPG(direction==='ArrowLeft'?-3:3);return;
