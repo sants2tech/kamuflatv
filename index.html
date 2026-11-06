@@ -1969,29 +1969,16 @@ function refreshKidsCache(){
 }
 const epgCache = new Map();
 
+const API_BASE = 'https://kamuflatv-api.sants2tech.workers.dev';
 function buildApiUrl(params, account='live'){
-  const credentials = getXtreamAccount(account);
-  const u = new URL(credentials.host + '/player_api.php');
-  u.search = new URLSearchParams({username:credentials.username, password:credentials.password, ...params}).toString();
+  const u = new URL(API_BASE);
+  u.search = new URLSearchParams(params).toString();
   return u.toString();
 }
-const PROXIES = [
-  {name:'direto', wrap: u => u},
-  {name:'corsproxy', wrap: u => 'https://corsproxy.io/?url=' + encodeURIComponent(u)},
-  {name:'allorigins', wrap: u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u)},
-  {name:'codetabs', wrap: u => 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u)}
-];
 async function fetchWithTimeout(url, ms){
   const c = typeof AbortController!=='undefined' ? new AbortController() : null; const t = setTimeout(() => {if(c)c.abort();}, ms);
   try{ const r = await fetch(url, {signal:c?c.signal:undefined, credentials:'omit'}); clearTimeout(t); return r; }
   catch(e){ clearTimeout(t); throw e; }
-}
-function firstSuccessful(promises){
-  return new Promise(function(resolve,reject){
-    var remaining=promises.length,errors=[];
-    if(!remaining){reject({errors:errors});return;}
-    promises.forEach(function(promise){Promise.resolve(promise).then(resolve,function(error){errors.push(error);remaining--;if(!remaining)reject({errors:errors});});});
-  });
 }
 function parseApiResponseData(data, params){
   const action=String(params && params.action || '');
@@ -2007,34 +1994,17 @@ function parseApiResponseData(data, params){
 }
 async function apiRequest(params, account='live'){
   const targetUrl=buildApiUrl(params, account);
-  let directError=null;
   try{
-    const direct=await fetchWithTimeout(targetUrl,5000);
-    if(direct.ok){
-      const data=await direct.json();
-      return parseApiResponseData(data,params);
+    const response=await fetchWithTimeout(targetUrl,15000);
+    let data=null;
+    try{ data=await response.json(); }catch(_){ data=null; }
+    if(!response.ok){
+      const detail=data && (data.error || data.message) ? ': '+(data.error || data.message) : '';
+      throw new Error('HTTP '+response.status+detail);
     }
-    directError=new Error('HTTP '+direct.status);
-  }catch(error){directError=error;}
-  const controllers=[];
-  const attempts=PROXIES.slice(1).map(async proxy=>{
-    const controller=typeof AbortController!=='undefined'?new AbortController():{signal:undefined,abort:function(){}};controllers.push(controller);
-    const timer=setTimeout(()=>controller.abort(),15000);
-    try{
-      const response=await fetch(proxy.wrap(targetUrl),{signal:controller.signal,credentials:'omit'});
-      if(!response.ok)throw new Error(proxy.name+': HTTP '+response.status);
-      const data=await response.json();
-      return parseApiResponseData(data,params);
-    }catch(error){throw new Error(proxy.name+': '+(error.message||'falha na resposta'));}
-    finally{clearTimeout(timer);}
-  });
-  try{
-    const result=await firstSuccessful(attempts);
-    controllers.forEach(controller=>controller.abort());
-    return result;
+    return parseApiResponseData(data,params);
   }catch(error){
-    const details=(error.errors||[]).map(e=>e.message).filter(Boolean).join(' | ');
-    throw new Error('Não foi possível carregar a API da conta '+(account==='vod'?'de filmes e séries':'de canais')+'. '+(details||directError&&directError.message||'Confira o servidor Xtream.'));
+    throw new Error('Não foi possível carregar a API da conta '+(account==='vod'?'de filmes e séries':'de canais')+'. '+(error.message||'Confira o Worker kamuflatv-api.'));
   }
 }
 async function loadSectionData(view){
