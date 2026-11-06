@@ -3360,7 +3360,7 @@ document.addEventListener('keyup',e=>{
 },true);
 document.addEventListener('click',e=>{if(!e.target.closest('#longPressMenu')&&!e.target.closest('[data-longpress="1"]'))hideLongPressActions();},true);
 
-function isRemoteBackKey(e){return ['Escape','Backspace','BrowserBack','GoBack','Back'].includes(e.key)||[4,8,27,166,461,10009,412].includes(e.keyCode);}
+function isRemoteBackKey(e){return ['Escape','Backspace','BrowserBack','GoBack','Back','TVBack','XF86Back','Exit'].includes(e.key)||[4,8,27,166,461,10009,412,10008].includes(e.keyCode);}
 function exitPlayerToHome(){
   if($('playerModal').style.display==='flex') $('closePlayer').click();
   playerEPGVisible=false;
