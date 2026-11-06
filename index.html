@@ -3537,7 +3537,7 @@ document.addEventListener('keydown',e=>{
     }
     e.preventDefault();e.stopPropagation();if(playerOpen)resetPlayerControlsTimer();focused.click();return;
   }
-  if(document.activeElement.matches('input,textarea')&&(direction==='ArrowLeft'||direction==='ArrowRight'))return;
+  if(document.activeElement.matches('input,textarea')&&(direction==='ArrowLeft'||direction==='ArrowRight')&&!(playerOpen&&playerControlsActive))return;
   if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(direction)){
     e.preventDefault();e.stopPropagation();tvMoveFocus(direction);
   }
@@ -3721,7 +3721,9 @@ function openPlayerSetting(selectId,button){
     if(select){
       if(selectId==='playerAspect')select.size=select.options.length;
       else select.size=Math.max(2,Math.min(5,select.options.length));
-      // Não focar programaticamente: isso abriria um pop-up no Android/WebView.
+      // O controle remoto precisa entrar no seletor para navegar pelas opções
+      // com as setas e confirmar com OK/Enter.
+      try{select.focus({preventScroll:true});}catch(_){select.focus();}
     }
   }
 }
