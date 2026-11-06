@@ -2870,8 +2870,10 @@ function playChannelById(id, name){
   state.currentChannelId = String(id);
   store.set('kamufla-last-live-channel', { id: String(id), name: String(name || '') });
   rememberLiveChannel(id,name);
+  // Usa a entrada HTTPS do provedor. O xhrSetup abaixo também converte os
+  // segmentos que a playlist redireciona para o IP HTTP de volta para HTTPS.
   const liveAccount = getXtreamAccount('live');
-  const url = `${liveAccount.host}/live/${encodeURIComponent(liveAccount.username)}/${encodeURIComponent(liveAccount.password)}/${id}.m3u8`;
+  const url = `https://governosptx.org/live/${encodeURIComponent(liveAccount.username)}/${encodeURIComponent(liveAccount.password)}/${id}.m3u8`;
   play(url, name, true, {stream_id: id, name: name}, 'canais');
 }
 window.playChannelById = playChannelById;
@@ -2935,10 +2937,15 @@ function play(url, title, isLive, item, view, resumeFromSaved){
       maxMaxBufferLength: 60,
       maxBufferSize: 60 * 1000 * 1000,
       maxBufferHole: 0.5,
-      liveSyncDurationCount: 4,
-      liveMaxLatencyDurationCount: 10,
-      maxLiveSyncPlaybackRate: 1,
-      nudgeMaxRetry: 6,
+      liveSyncDurationCount: 3,
+      liveMaxLatencyDurationCount: 9,
+      maxLiveSyncPlaybackRate: 1.05,
+      startFragPrefetch: true,
+      nudgeMaxRetry: 8,
+      xhrSetup: (xhr, requestUrl) => {
+        const secureUrl = String(requestUrl || '').replace(/^http:\/\/31\.56\.44\.120(?::80)?\//, 'https://governosptx.org/');
+        if (secureUrl !== requestUrl) xhr.open('GET', secureUrl, true);
+      },
       fragLoadingTimeOut: 20000,
       fragLoadingMaxRetry: 6,
       fragLoadingRetryDelay: 1000,
@@ -2954,13 +2961,20 @@ function play(url, title, isLive, item, view, resumeFromSaved){
     let mediaRecoveries = 0;
     hlsPlayer.on(Hls.Events.MEDIA_ATTACHED, () => hlsPlayer.loadSource(url));
     hlsPlayer.on(Hls.Events.MANIFEST_PARSED, () => { safeVideoPlay(); setTimeout(setPlayerTrackOptions,100); });
+    hlsPlayer.on(Hls.Events.BUFFER_STALLED_ERROR, () => {
+      if(state.player === hlsPlayer) hlsPlayer.startLoad(-1);
+    });
     hlsPlayer.on(Hls.Events.ERROR, (_, data) => {
-      if(!data || !data.fatal || state.player !== hlsPlayer) return;
+      if(!data || state.player !== hlsPlayer) return;
+      if(!data.fatal){
+        if(data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR || data.details === Hls.ErrorDetails.BUFFER_APPEND_ERROR) hlsPlayer.startLoad(-1);
+        return;
+      }
       console.warn('[HLS] Erro fatal; tentando recuperar:', data.type, data.details);
-      if(data.type === Hls.ErrorTypes.NETWORK_ERROR && networkRecoveries < 4){
+      if(data.type === Hls.ErrorTypes.NETWORK_ERROR && networkRecoveries < 8){
         networkRecoveries++;
-        setTimeout(() => { if(state.player === hlsPlayer) hlsPlayer.startLoad(); }, 1200 * networkRecoveries);
-      } else if(data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRecoveries < 3){
+        setTimeout(() => { if(state.player === hlsPlayer) hlsPlayer.startLoad(-1); }, Math.min(5000, 900 * networkRecoveries));
+      } else if(data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRecoveries < 5){
         mediaRecoveries++;
         try{ hlsPlayer.recoverMediaError(); }catch(error){ console.warn('[HLS] Falha ao recuperar mídia:', error); }
       } else {
@@ -3099,8 +3113,10 @@ function renderPlayerTimeline(){
     return `<div class="timeline-channel-row ${active?'active-channel':''}" data-timeline-ch="${esc(id)}" data-name="${esc(name)}" tabindex="0" aria-label="${esc(name)} · selecionar canal"><div class="timeline-channel-cell">${logo?`<img src="${esc(logo)}" loading="lazy" onerror="this.style.display='none'">`:''}<div><div class="timeline-channel-name">${esc(name)}</div>${active?'<span class="timeline-watching-badge">● ASSISTINDO AGORA</span>':''}</div></div><div class="timeline-track" id="timeline-track-${esc(id)}"><div class="timeline-empty">Carregando programação…</div></div></div>`;
   }).join('');
   list.querySelectorAll('.timeline-channel-row').forEach(row=>{
-    row.onclick=e=>{if(e.target.closest('.timeline-program'))return;playChannelById(row.dataset.timelineCh,row.dataset.name);};
-    row.onkeydown=e=>{if(e.target===row&&(e.key==='Enter'||e.key===' '||e.keyCode===13||e.keyCode===32)){e.preventDefault();row.click();}};
+    // A seleção do canal na grade sintoniza imediatamente. Os blocos de
+    // programação continuam abrindo detalhes porque interrompem a propagação.
+    row.onclick=e=>{playChannelById(row.dataset.timelineCh,row.dataset.name);};
+    row.onkeydown=e=>{if(e.target===row&&(e.key==='Enter'||e.key===' '||e.keyCode===13||e.keyCode===32)){e.preventDefault();playChannelById(row.dataset.timelineCh,row.dataset.name);}};
   });
   // Busca com concorrência limitada para não sobrecarregar o celular nem a fonte do EPG.
   let cursor=0;const workers=Array.from({length:Math.min(5,all.length)},async()=>{
