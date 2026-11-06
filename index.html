@@ -1741,18 +1741,8 @@ try {
 
 // Uma única conta Xtream Code fornece os catálogos de canais, filmes e séries.
 // As credenciais ficam visíveis neste HTML; evite publicar o arquivo em locais públicos.
-const XTREAM = {
-  live: {
-    host: 'http://governosptx.org:80',
-    username: '3llohwk4g9',
-    password: 'kwf099q30o'
-  },
-  vod: {
-    host: 'http://governosptx.org:80',
-    username: '3llohwk4g9',
-    password: 'kwf099q30o'
-  }
-};
+// As credenciais Xtream ficam exclusivamente no Worker da Cloudflare.
+const XTREAM = { live: {}, vod: {} };
 // EPG original preservado sem alterações.
 const EPG_XML_URL = 'https://raw.githubusercontent.com/sants2tech/epg-xtream-personalizado/main/public/epg.xml';
 function getXtreamAccount(account){
@@ -1970,6 +1960,20 @@ function refreshKidsCache(){
 const epgCache = new Map();
 
 const API_BASE = 'https://kamuflatv-api.sants2tech.workers.dev';
+let streamSessionToken = '', streamSessionExpiresAt = 0;
+async function ensureStreamSession(){
+  if(streamSessionToken && Date.now() < streamSessionExpiresAt - 30000) return streamSessionToken;
+  const response = await fetch(API_BASE + '/session', {credentials:'include'});
+  if(!response.ok) throw new Error('Não foi possível iniciar a sessão segura do player.');
+  const data = await response.json();
+  streamSessionToken = String(data.token || '');
+  streamSessionExpiresAt = Date.now() + Math.max(60000, Number(data.expires_in || 600) * 1000);
+  if(!streamSessionToken) throw new Error('O Worker não forneceu uma sessão válida.');
+  return streamSessionToken;
+}
+function mediaUrl(kind,id,ext){
+  return `${API_BASE}/stream/${kind}/${encodeURIComponent(id)}.${encodeURIComponent(ext || 'mp4')}`;
+}
 function buildApiUrl(params, account='live'){
   const u = new URL(API_BASE);
   u.search = new URLSearchParams(params).toString();
@@ -2760,10 +2764,9 @@ function showContentDetailModal(item, view, plot, genre, rating, year, extraInfo
         <div class="season-episodes" id="seasonEpisodes">
           ${seasons.map((season,index)=>`<div class="episode-season" data-season-panel="${esc(season)}"${index===0?'':' hidden'}>
             ${(episodes[season] || []).map(ep=>{
-              const vodAccount = getXtreamAccount('vod');
-              const url = `${vodAccount.host}/series/${encodeURIComponent(vodAccount.username)}/${encodeURIComponent(vodAccount.password)}/${ep.id}.${ep.container_extension || 'mp4'}`;
+              const ext = ep.container_extension || 'mp4';
               const title = (ep.title || 'Episódio ' + ep.episode_num) + ' — ' + itemName(item);
-              return `<button class="episode-button" type="button" data-ep-url="${esc(url)}" data-ep-title="${esc(title)}">${detailIcons.play}<span>${esc(ep.title || 'Episódio ' + ep.episode_num)}</span></button>`;
+              return `<button class="episode-button" type="button" data-ep-id="${esc(ep.id)}" data-ep-ext="${esc(ext)}" data-ep-title="${esc(title)}">${detailIcons.play}<span>${esc(ep.title || 'Episódio ' + ep.episode_num)}</span></button>`;
             }).join('')}
           </div>`).join('')}
         </div>
@@ -2827,8 +2830,7 @@ function showContentDetailModal(item, view, plot, genre, rating, year, extraInfo
       btnPlay.onclick = () => {
         modal.style.display = 'none';
         const ext = item.container_extension || 'mp4';
-        const vodAccount = getXtreamAccount('vod');
-        const url = `${vodAccount.host}/movie/${encodeURIComponent(vodAccount.username)}/${encodeURIComponent(vodAccount.password)}/${itemId(item)}.${ext}`;
+        const url = mediaUrl('movie', itemId(item), ext);
         play(url, itemName(item), false, item, 'filmes');
       };
     }
@@ -2844,10 +2846,11 @@ function showContentDetailModal(item, view, plot, genre, rating, year, extraInfo
     showContentDetailModal(item, view, plot, genre, rating, year, extraInfo);
   };
 
-  modal.querySelectorAll('[data-ep-url]').forEach(btn => {
+  modal.querySelectorAll('[data-ep-id]').forEach(btn => {
     btn.onclick = () => {
       modal.style.display = 'none';
-      play(btn.dataset.epUrl, btn.dataset.epTitle, false, item, view);
+      const url = mediaUrl('series', btn.dataset.epId, btn.dataset.epExt || 'mp4');
+      play(url, btn.dataset.epTitle, false, item, view);
     };
   });
 
@@ -2863,7 +2866,7 @@ function showContentDetailModal(item, view, plot, genre, rating, year, extraInfo
 const video = $('video');
 function safeVideoPlay(){try{const result=video.play();if(result&&typeof result.catch==='function')result.catch(function(error){console.warn('[player]',error);});}catch(error){console.warn('[player]',error);}}
 
-function playChannelById(id, name){
+async function playChannelById(id, name){
   if(playerEPGVisible)togglePlayerEPG();
   const channel = (cache.canais.items || []).find(ch => itemId(ch) === String(id));
   if(channel && itemCategoryBlocked(channel,'canais') && !promptParental(channel,'canais')) return;
@@ -2872,8 +2875,10 @@ function playChannelById(id, name){
   rememberLiveChannel(id,name);
   // Usa a entrada HTTPS do provedor. O xhrSetup abaixo também converte os
   // segmentos que a playlist redireciona para o IP HTTP de volta para HTTPS.
-  const liveAccount = getXtreamAccount('live');
-  const url = `https://governosptx.org/live/${encodeURIComponent(liveAccount.username)}/${encodeURIComponent(liveAccount.password)}/${id}.m3u8`;
+  let token;
+  try { token = await ensureStreamSession(); }
+  catch(error) { console.error('[KTV] Sessão segura:', error); window.alert(error.message || 'Não foi possível iniciar o player.'); return; }
+  const url = `${API_BASE}/stream/live/${encodeURIComponent(id)}.m3u8?token=${encodeURIComponent(token)}`;
   play(url, name, true, {stream_id: id, name: name}, 'canais');
 }
 window.playChannelById = playChannelById;
@@ -3499,7 +3504,7 @@ function tvMoveFocus(direction){
 
 document.addEventListener('focusin',e=>{
   const badge=$('focusedContentName');if(!badge)return;
-  const item=e.target.closest&&e.target.closest('.card,.epg-row,.pepg-row,.home-hero,[data-ep-url]');
+  const item=e.target.closest&&e.target.closest('.card,.epg-row,.pepg-row,.home-hero,[data-ep-id]');
   if(!item){badge.classList.remove('visible');return;}
   let name=item.dataset.fullName||item.dataset.name||item.dataset.epTitle||'';
   if(!name){const title=item.querySelector('.card-title,.epg-channel-name,.pepg-channel-name,.pepg-title');name=title?title.textContent.trim():'';}
