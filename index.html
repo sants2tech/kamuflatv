@@ -1967,7 +1967,7 @@ function savedApiCredentials(){
   catch(_) { return null; }
 }
 function ensureApiCredentials(){
-  const saved=savedApiCredentials();
+  const saved=currentApiCredentials();
   if(saved) return Promise.resolve(saved);
   if(apiCredentialsPromise) return apiCredentialsPromise;
   apiCredentialsPromise=new Promise(resolve=>{
