@@ -1651,6 +1651,7 @@ html,body{overscroll-behavior:none}
 <div id="playerModal">
   <div class="player-wrapper" id="playerWrapper" tabindex="-1">
     <video id="video" autoplay playsinline></video>
+    <div id="playbackStatus" class="playback-status" role="status" aria-live="polite"><div class="playback-status-card"><span class="playback-spinner" id="playbackSpinner"></span><strong id="playbackStatusTitle">Conectando ao servidor…</strong><span id="playbackStatusDetail">Aguarde enquanto o conteúdo é carregado.</span><span id="playbackBuffer">Buffer disponível: —</span></div></div>
     <div id="playerInfoBar" aria-live="polite"><strong id="playerInfoName">Canal</strong><div class="pi-meta" id="playerInfoMeta">Informações do canal</div></div>
     <div id="playerMiniGuide" aria-live="polite"><div class="mg-current" id="miniGuideCurrent">Programa atual</div><div class="mg-next" id="miniGuideNext">Próximo programa</div></div>
     <div id="playerLockBadge" role="button" tabindex="0" aria-label="Desbloquear player">🔒 PLAYER BLOQUEADO · toque aqui para desbloquear</div>
@@ -2893,6 +2894,27 @@ function showContentDetailModal(item, view, plot, genre, rating, year, extraInfo
 }
 
 const video = $('video');
+let playbackStatusTimer=null;
+function setPlaybackStatus(title, detail, mode='loading'){
+  const box=$('playbackStatus'); if(!box)return;
+  clearTimeout(playbackStatusTimer); box.classList.remove('is-hidden','is-error');
+  box.classList.toggle('is-error',mode==='error');
+  $('playbackStatusTitle').textContent=title||'Carregando…';
+  $('playbackStatusDetail').textContent=detail||'';
+  $('playbackSpinner').style.display=mode==='error'?'none':'block';
+}
+function hidePlaybackStatus(){const box=$('playbackStatus');if(box)box.classList.add('is-hidden');}
+function updatePlaybackBuffer(){
+  const label=$('playbackBuffer');if(!label)return;let seconds=0;
+  try{for(let i=0;i<video.buffered.length;i++){const start=video.buffered.start(i),end=video.buffered.end(i);if(video.currentTime>=start-0.5&&video.currentTime<=end+0.5){seconds=Math.max(0,end-video.currentTime);break;}}}catch(_){}
+  label.textContent='Buffer disponível: '+(seconds>0?seconds.toFixed(1)+' s':'aguardando dados');
+}
+function showPlaybackFailure(detail){
+  const code=video.error?video.error.code:0;
+  const messages={1:'Reprodução cancelada.',2:'Falha de rede ao receber o vídeo.',3:'Formato ou decodificação de vídeo incompatível.',4:'O formato ou endereço do vídeo não é suportado.'};
+  setPlaybackStatus('Não foi possível reproduzir',detail||messages[code]||'O servidor não entregou um fluxo compatível.','error');
+  $('playbackBuffer').textContent='Código do player: '+(code||'indisponível');
+}
 function safeVideoPlay(){try{const result=video.play();if(result&&typeof result.catch==='function')result.catch(function(error){console.warn('[player]',error);});}catch(error){console.warn('[player]',error);}}
 
 async function playChannelById(id, name){
@@ -2930,6 +2952,8 @@ function play(url, title, isLive, item, view, resumeFromSaved){
   $('pTitle').textContent = title;
   $('pSub').textContent = isLive ? 'KamuflaTV • Transmissão Ao Vivo' : 'KamuflaTV • On Demand';
   $('playerModal').style.display = 'flex';
+  setPlaybackStatus('Conectando ao servidor…','Solicitando o fluxo de vídeo.');
+  $('playbackBuffer').textContent='Buffer disponível: aguardando dados';
   clearTimeout(playerControlsTimer);playerControlsActive=false;
   $('playerOverlay').classList.remove('show');$('playerOverlay').style.opacity='0';$('playerOverlay').style.pointerEvents='none';
   setTimeout(()=>{try{$('playerWrapper').focus();}catch(_){}},80);
@@ -2991,7 +3015,9 @@ function play(url, title, isLive, item, view, resumeFromSaved){
     const hlsPlayer = state.player;
     let networkRecoveries = 0;
     let mediaRecoveries = 0;
-    hlsPlayer.on(Hls.Events.MEDIA_ATTACHED, () => hlsPlayer.loadSource(url));
+    hlsPlayer.on(Hls.Events.MEDIA_ATTACHED, () => { setPlaybackStatus('Conectado ao player','Carregando a lista de reprodução…'); hlsPlayer.loadSource(url); });
+    hlsPlayer.on(Hls.Events.MANIFEST_LOADING,()=>setPlaybackStatus('Carregando transmissão…','Recebendo informações do fluxo.'));
+    hlsPlayer.on(Hls.Events.MANIFEST_PARSED,()=>setPlaybackStatus('Preparando vídeo…','Aguardando os primeiros dados de imagem e som.'));
     hlsPlayer.on(Hls.Events.MANIFEST_PARSED, () => { safeVideoPlay(); setTimeout(setPlayerTrackOptions,100); });
     hlsPlayer.on(Hls.Events.BUFFER_STALLED_ERROR, () => {
       if(state.player === hlsPlayer) hlsPlayer.startLoad(-1);
@@ -3003,6 +3029,8 @@ function play(url, title, isLive, item, view, resumeFromSaved){
         return;
       }
       console.warn('[HLS] Erro fatal; tentando recuperar:', data.type, data.details);
+      if(data.type===Hls.ErrorTypes.NETWORK_ERROR)setPlaybackStatus('Conexão instável','Tentando reconectar ao servidor…');
+      else if(data.type===Hls.ErrorTypes.MEDIA_ERROR)setPlaybackStatus('Recuperando vídeo','O player está tentando corrigir a decodificação…');
       if(data.type === Hls.ErrorTypes.NETWORK_ERROR && networkRecoveries < 8){
         networkRecoveries++;
         setTimeout(() => { if(state.player === hlsPlayer) hlsPlayer.startLoad(-1); }, Math.min(5000, 900 * networkRecoveries));
@@ -3016,6 +3044,7 @@ function play(url, title, isLive, item, view, resumeFromSaved){
     hlsPlayer.attachMedia(video);
   } else {
     // Fallback para HLS nativo (Safari/WebView) ou formatos diretos.
+    setPlaybackStatus('Abrindo conteúdo…','Aguardando resposta do servidor de mídia.');
     video.src = url;
     safeVideoPlay();
   }
@@ -3795,6 +3824,16 @@ $('playerLockBadge').onclick=()=>setPlayerLock(false);$('playerLockBadge').onkey
 $('playerWindowToggle').onclick=()=>{const modal=$('playerModal');modal.classList.toggle('player-window-mode');$('playerWindowToggle').textContent=modal.classList.contains('player-window-mode')?'Restaurar player':'Janela flutuante';};
 $('playerWrapper').addEventListener('click',e=>{if(playerLocked&&e.target!==$('playerLockBadge')){e.preventDefault();e.stopPropagation();$('playerLockBadge').classList.add('show');}} ,true);
 video.addEventListener('loadedmetadata',setPlayerTrackOptions);
+video.addEventListener('loadstart',()=>setPlaybackStatus('Conectando…','Iniciando solicitação de mídia.'));
+video.addEventListener('loadeddata',()=>setPlaybackStatus('Quase pronto…','Os primeiros dados chegaram. Preparando reprodução.'));
+video.addEventListener('playing',hidePlaybackStatus);
+video.addEventListener('waiting',()=>{updatePlaybackBuffer();setPlaybackStatus('Carregando…','O vídeo está aguardando mais dados da transmissão.');});
+video.addEventListener('stalled',()=>{updatePlaybackBuffer();setPlaybackStatus('Recepção interrompida','Aguardando resposta do servidor…');});
+video.addEventListener('progress',updatePlaybackBuffer);
+video.addEventListener('timeupdate',updatePlaybackBuffer);
+video.addEventListener('canplay',()=>{if(video.paused===false)hidePlaybackStatus();});
+video.addEventListener('error',()=>showPlaybackFailure());
+video.addEventListener('abort',()=>{if($('playerModal').style.display==='flex')setPlaybackStatus('Carregamento interrompido','A solicitação de vídeo foi cancelada.','error');});
 video.addEventListener('play',()=>{$('btnPlayPause').setAttribute('aria-label','Pausar');});
 video.addEventListener('pause',()=>{$('btnPlayPause').setAttribute('aria-label','Reproduzir');});
 refreshRecentChannelSelect();
@@ -3909,5 +3948,17 @@ refreshRecentChannelSelect();
   window.addEventListener('pageshow',tryOnLaunch);
 })();
 </script>
+<style id="kamuflatv-playback-status">
+#playbackStatus{position:absolute;inset:0;z-index:305;display:flex;align-items:center;justify-content:center;padding:22px;background:rgba(0,0,0,.36);pointer-events:none;transition:opacity .2s ease}
+#playbackStatus.is-hidden{opacity:0;visibility:hidden}
+#playbackStatus .playback-status-card{display:flex;flex-direction:column;align-items:center;gap:10px;max-width:min(90vw,390px);padding:22px 26px;border:1px solid rgba(255,255,255,.17);border-radius:18px;background:rgba(8,17,29,.94);box-shadow:0 12px 42px #000b;text-align:center;color:#fff;backdrop-filter:blur(12px)}
+#playbackStatusTitle{font-size:1rem;font-weight:800}
+#playbackStatusDetail{font-size:.82rem;line-height:1.45;color:#c4d1df}
+#playbackBuffer{font-size:.72rem;color:#9eb2c8}
+.playback-spinner{width:34px;height:34px;border:3px solid rgba(255,255,255,.2);border-top-color:#e9ad42;border-radius:50%;animation:ktvPlaybackSpin .8s linear infinite}
+@keyframes ktvPlaybackSpin{to{transform:rotate(360deg)}}
+#playbackStatus.is-error .playback-status-card{border-color:rgba(255,100,100,.5)}
+#playbackStatus.is-error #playbackStatusTitle{color:#ffb0a9}
+</style>
 </body>
 </html>
