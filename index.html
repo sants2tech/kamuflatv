@@ -1960,24 +1960,52 @@ function refreshKidsCache(){
 const epgCache = new Map();
 
 const API_BASE = 'https://kamuflatv-api.sants2tech.workers.dev';
-let streamSessionToken = '', streamSessionExpiresAt = 0;
-async function ensureStreamSession(){
-  if(streamSessionToken && Date.now() < streamSessionExpiresAt - 30000) return streamSessionToken;
-  const response = await fetch(API_BASE + '/session', {credentials:'include'});
-  if(!response.ok) throw new Error('Não foi possível iniciar a sessão segura do player.');
-  const data = await response.json();
-  streamSessionToken = String(data.token || '');
-  streamSessionExpiresAt = Date.now() + Math.max(60000, Number(data.expires_in || 600) * 1000);
-  if(!streamSessionToken) throw new Error('O Worker não forneceu uma sessão válida.');
-  return streamSessionToken;
+const API_CREDENTIAL_KEY = 'kamuflatv-api-credentials-v1';
+let apiCredentialsPromise = null;
+function savedApiCredentials(){
+  try { const value=JSON.parse(localStorage.getItem(API_CREDENTIAL_KEY)||'null'); return value&&value.username&&value.password?value:null; }
+  catch(_) { return null; }
 }
+function ensureApiCredentials(){
+  const saved=savedApiCredentials();
+  if(saved) return Promise.resolve(saved);
+  if(apiCredentialsPromise) return apiCredentialsPromise;
+  apiCredentialsPromise=new Promise(resolve=>{
+    const overlay=document.createElement('div');
+    overlay.id='kamuflaApiLogin';
+    overlay.style.cssText='position:fixed;inset:0;z-index:10050;background:rgba(0,0,0,.94);display:flex;align-items:center;justify-content:center;padding:18px;font-family:inherit;color:#fff';
+    overlay.innerHTML='<form id="kamuflaApiLoginForm" style="width:min(420px,100%);background:#11141d;border:1px solid #343b4d;border-radius:14px;padding:22px;box-shadow:0 16px 50px #000"><div style="font-size:1.35rem;font-weight:900;margin-bottom:5px">KamuflaTV</div><p style="color:#aab2c2;font-size:.88rem;margin:0 0 18px">Entre com seu acesso da API KamuflaTV para carregar canais, filmes e séries.</p><label style="display:block;font-size:.8rem;margin:0 0 5px">Usuário da API</label><input id="kamuflaApiUser" autocomplete="username" required style="width:100%;padding:12px;border-radius:8px;border:1px solid #394154;background:#080b12;color:#fff;margin-bottom:12px"><label style="display:block;font-size:.8rem;margin:0 0 5px">Senha da API</label><input id="kamuflaApiPass" type="password" autocomplete="current-password" required style="width:100%;padding:12px;border-radius:8px;border:1px solid #394154;background:#080b12;color:#fff;margin-bottom:14px"><label style="display:flex;gap:8px;align-items:center;color:#aab2c2;font-size:.75rem;margin-bottom:16px"><input id="kamuflaApiRemember" type="checkbox" checked> Salvar acesso neste dispositivo</label><button type="submit" style="width:100%;padding:12px;border:0;border-radius:8px;background:#e60000;color:white;font-weight:800;font-size:.9rem">Conectar à KamuflaTV</button><p style="color:#81899a;font-size:.68rem;line-height:1.4;margin:13px 0 0">Use o usuário e a senha configurados nos Secrets API_CLIENT_USER e API_CLIENT_PASS do Worker. Não use os dados da conta Xtream.</p><p id="kamuflaApiLoginError" style="color:#ff8888;font-size:.78rem;min-height:1em;margin:8px 0 0"></p></form>';
+    document.body.appendChild(overlay);
+    const form=overlay.querySelector('#kamuflaApiLoginForm');
+    form.addEventListener('submit',event=>{
+      event.preventDefault();
+      const username=overlay.querySelector('#kamuflaApiUser').value.trim();
+      const password=overlay.querySelector('#kamuflaApiPass').value;
+      if(!username||!password){overlay.querySelector('#kamuflaApiLoginError').textContent='Informe usuário e senha.';return;}
+      const value={username,password};
+      try {
+        if(overlay.querySelector('#kamuflaApiRemember').checked) localStorage.setItem(API_CREDENTIAL_KEY,JSON.stringify(value));
+        else sessionStorage.setItem(API_CREDENTIAL_KEY,JSON.stringify(value));
+      } catch(_) { overlay.querySelector('#kamuflaApiLoginError').textContent='Não foi possível salvar o acesso neste navegador.';return; }
+      overlay.remove(); apiCredentialsPromise=null; resolve(value);
+    });
+  });
+  return apiCredentialsPromise;
+}
+function currentApiCredentials(){return savedApiCredentials()||(()=>{try{return JSON.parse(sessionStorage.getItem(API_CREDENTIAL_KEY)||'null')}catch(_){return null}})();}
 function mediaUrl(kind,id,ext){
-  return `${API_BASE}/stream/${kind}/${encodeURIComponent(id)}.${encodeURIComponent(ext || 'mp4')}`;
+  const credentials=currentApiCredentials();
+  if(!credentials) throw new Error('Entre na KamuflaTV novamente para reproduzir este conteúdo.');
+  const route=kind==='movie'?'movie':kind==='series'?'series':'live';
+  return `${API_BASE}/${route}/${encodeURIComponent(credentials.username)}/${encodeURIComponent(credentials.password)}/${encodeURIComponent(id)}.${encodeURIComponent(ext || 'mp4')}`;
 }
 function buildApiUrl(params, account='live'){
-  const u = new URL(API_BASE);
-  u.search = new URLSearchParams(params).toString();
-  return u.toString();
+  const credentials=currentApiCredentials();
+  if(!credentials) throw new Error('Acesso da API não configurado.');
+  const query=new URLSearchParams(params);
+  query.set('username',credentials.username);
+  query.set('password',credentials.password);
+  return API_BASE + '/player_api.php?' + query.toString();
 }
 async function fetchWithTimeout(url, ms){
   const c = typeof AbortController!=='undefined' ? new AbortController() : null; const t = setTimeout(() => {if(c)c.abort();}, ms);
@@ -1997,6 +2025,7 @@ function parseApiResponseData(data, params){
   return data;
 }
 async function apiRequest(params, account='live'){
+  await ensureApiCredentials();
   const targetUrl=buildApiUrl(params, account);
   try{
     const response=await fetchWithTimeout(targetUrl,15000);
@@ -2873,12 +2902,10 @@ async function playChannelById(id, name){
   state.currentChannelId = String(id);
   store.set('kamufla-last-live-channel', { id: String(id), name: String(name || '') });
   rememberLiveChannel(id,name);
-  // Usa a entrada HTTPS do provedor. O xhrSetup abaixo também converte os
-  // segmentos que a playlist redireciona para o IP HTTP de volta para HTTPS.
-  let token;
-  try { token = await ensureStreamSession(); }
-  catch(error) { console.error('[KTV] Sessão segura:', error); window.alert(error.message || 'Não foi possível iniciar o player.'); return; }
-  const url = `${API_BASE}/stream/live/${encodeURIComponent(id)}.m3u8?token=${encodeURIComponent(token)}`;
+  // O Worker valida as credenciais da API no caminho /live/{usuario}/{senha}/{id}.m3u8.
+  let url;
+  try { url = mediaUrl('live', id, 'm3u8'); }
+  catch(error) { window.alert(error.message || 'Não foi possível iniciar o player.'); return; }
   play(url, name, true, {stream_id: id, name: name}, 'canais');
 }
 window.playChannelById = playChannelById;
