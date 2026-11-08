@@ -2918,7 +2918,7 @@ function showPlaybackFailure(detail){
 }
 function safeVideoPlay(){try{const result=video.play();if(result&&typeof result.catch==='function')result.catch(function(error){console.warn('[player]',error);});}catch(error){console.warn('[player]',error);}}
 function startLiveTsFallback(originalUrl,title){
-  const tsUrl=String(originalUrl||'').replace(/\\.m3u8(?=[$?#])/i,'.ts').replace(/\\.m3u8$/i,'.ts');
+  const tsUrl=String(originalUrl||'').replace(/\.m3u8(?=[$?#])/i,'.ts').replace(/\.m3u8$/i,'.ts');
   if(tsUrl===originalUrl||!window.mpegts||!mpegts.isSupported()){
     setPlaybackStatus('Formato de transmissão incompatível','O servidor não entregou uma playlist HLS válida e este dispositivo não consegue abrir o fluxo TS.','error');
     return false;
