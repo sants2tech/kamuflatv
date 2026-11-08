@@ -1726,6 +1726,7 @@ html,body{overscroll-behavior:none}
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17"></script>
+<script src="https://cdn.jsdelivr.net/npm/mpegts.js@1.8.0/dist/mpegts.min.js"></script>
 <script>
 (function(){
 'use strict';
@@ -2916,6 +2917,35 @@ function showPlaybackFailure(detail){
   $('playbackBuffer').textContent='Código do player: '+(code||'indisponível');
 }
 function safeVideoPlay(){try{const result=video.play();if(result&&typeof result.catch==='function')result.catch(function(error){console.warn('[player]',error);});}catch(error){console.warn('[player]',error);}}
+function startLiveTsFallback(originalUrl,title){
+  const tsUrl=String(originalUrl||'').replace(/\\.m3u8(?=[$?#])/i,'.ts').replace(/\\.m3u8$/i,'.ts');
+  if(tsUrl===originalUrl||!window.mpegts||!mpegts.isSupported()){
+    setPlaybackStatus('Formato de transmissão incompatível','O servidor não entregou uma playlist HLS válida e este dispositivo não consegue abrir o fluxo TS.','error');
+    return false;
+  }
+  try{
+    if(state.player){try{state.player.destroy();}catch(_){}}
+    state.player=null;
+    video.pause();video.removeAttribute('src');video.load();
+    setPlaybackStatus('Tentando formato alternativo','O servidor não aceitou HLS. Testando transmissão MPEG-TS…');
+    const player=mpegts.createPlayer({type:'mpegts',isLive:true,url:tsUrl},{enableWorker:true,enableStashBuffer:true,stashInitialSize:256});
+    state.player=player;
+    player.on(mpegts.Events.ERROR,(type,detail,info)=>{
+      if(state.player!==player)return;
+      console.warn('[MPEG-TS] Erro de reprodução:',type,detail,info||'');
+      setPlaybackStatus('Não foi possível reproduzir','O servidor não entregou um fluxo MPEG-TS válido. Confira a disponibilidade do canal no provedor.','error');
+    });
+    player.attachMediaElement(video);
+    player.load();
+    const result=player.play();
+    if(result&&typeof result.catch==='function')result.catch(error=>console.warn('[MPEG-TS] play:',error));
+    return true;
+  }catch(error){
+    console.warn('[MPEG-TS] Falha ao iniciar fallback:',error);
+    setPlaybackStatus('Falha no formato alternativo','Não foi possível iniciar o decodificador MPEG-TS.','error');
+    return false;
+  }
+}
 
 async function playChannelById(id, name){
   if(playerEPGVisible)togglePlayerEPG();
@@ -3031,7 +3061,11 @@ function play(url, title, isLive, item, view, resumeFromSaved){
       console.warn('[HLS] Erro fatal; tentando recuperar:', data.type, data.details);
       if(data.type===Hls.ErrorTypes.NETWORK_ERROR)setPlaybackStatus('Conexão instável','Tentando reconectar ao servidor…');
       else if(data.type===Hls.ErrorTypes.MEDIA_ERROR)setPlaybackStatus('Recuperando vídeo','O player está tentando corrigir a decodificação…');
-      if(data.type === Hls.ErrorTypes.NETWORK_ERROR && networkRecoveries < 8){
+      const manifestFailure = data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR || data.details === Hls.ErrorDetails.MANIFEST_PARSING_ERROR;
+      if(manifestFailure && isLive && !hlsPlayer.__kamuflaTsFallback){
+        hlsPlayer.__kamuflaTsFallback=true;
+        startLiveTsFallback(url,title);
+      } else if(data.type === Hls.ErrorTypes.NETWORK_ERROR && networkRecoveries < 8){
         networkRecoveries++;
         setTimeout(() => { if(state.player === hlsPlayer) hlsPlayer.startLoad(-1); }, Math.min(5000, 900 * networkRecoveries));
       } else if(data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRecoveries < 5){
