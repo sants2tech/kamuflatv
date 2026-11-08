@@ -3061,7 +3061,7 @@ function play(url, title, isLive, item, view, resumeFromSaved){
       console.warn('[HLS] Erro fatal; tentando recuperar:', data.type, data.details);
       if(data.type===Hls.ErrorTypes.NETWORK_ERROR)setPlaybackStatus('Conexão instável','Tentando reconectar ao servidor…');
       else if(data.type===Hls.ErrorTypes.MEDIA_ERROR)setPlaybackStatus('Recuperando vídeo','O player está tentando corrigir a decodificação…');
-      const manifestFailure = data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR || data.details === Hls.ErrorDetails.MANIFEST_PARSING_ERROR;
+      const manifestFailure = data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR || data.details === Hls.ErrorDetails.MANIFEST_PARSING_ERROR || data.details === Hls.ErrorDetails.LEVEL_LOAD_ERROR;
       if(manifestFailure && isLive && !hlsPlayer.__kamuflaTsFallback){
         hlsPlayer.__kamuflaTsFallback=true;
         startLiveTsFallback(url,title);
