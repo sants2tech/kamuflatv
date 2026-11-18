@@ -66,6 +66,7 @@ footer{max-width:1440px;margin:auto;padding:0 24px 28px;color:#78879a;font-size:
  const $=id=>document.getElementById(id);
  const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo'}).format(new Date());
  const shift=(date,n)=>{const d=new Date(date+'T12:00:00');d.setDate(d.getDate()+n);return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo'}).format(d)};
+ const localDay=t=>new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo'}).format(new Date(t));
  const fmtDate=d=>new Intl.DateTimeFormat('pt-BR',{dateStyle:'full',timeZone:'America/Sao_Paulo'}).format(new Date(d+'T12:00:00'));
  const time=t=>new Intl.DateTimeFormat('pt-BR',{hour:'2-digit',minute:'2-digit',timeZone:'America/Sao_Paulo'}).format(new Date(t));
  const img=u=>u?(u.startsWith('http')?u:SPORTS_ORIGIN+u):'';
@@ -75,15 +76,15 @@ footer{max-width:1440px;margin:auto;padding:0 24px 28px;color:#78879a;font-size:
  async function fetchAll(){
    const from=$('dateFrom').value,to=$('dateTo').value;
    if(!from||!to||to<from){$('message').textContent='Confira o intervalo de datas.';return}
-   if((new Date(to+'T12:00:00')-new Date(from+'T12:00:00'))/86400000>29){$('message').textContent='Escolha um intervalo de até 30 dias por consulta.';return}
+   if((new Date(to+'T12:00:00')-new Date(from+'T12:00:00'))/86400000>27){$('message').textContent='Escolha um intervalo de até 28 dias por consulta.';return}
    $('connection').textContent='Consultando calendário…';$('message').classList.remove('hidden');$('message').textContent='Carregando partidas e informações de transmissão…';$('matches').innerHTML='';
    try{
-     const params=new URLSearchParams({sport:'football',from,to,limit:'100',offset:'0'});
+     const params=new URLSearchParams({sport:'football',from:shift(from,-1),to:shift(to,1),limit:'100',offset:'0'});
      let data=await request(params),matches=[...(data.matches||[])],next=data.pagination?.nextOffset;
      while(data.pagination?.hasNext&&next!==null&&next!==undefined){
        params.set('offset',String(next));data=await request(params);matches.push(...(data.matches||[]));next=data.pagination?.nextOffset;
      }
-     allMatches=matches.sort((a,b)=>(a.startTime||0)-(b.startTime||0));
+     allMatches=matches.filter(m=>m.startTime&&localDay(m.startTime)>=from&&localDay(m.startTime)<=to).sort((a,b)=>(a.startTime||0)-(b.startTime||0));
      $('connection').textContent='Fonte conectada · atualizado '+new Date().toLocaleTimeString('pt-BR');
      $('message').classList.toggle('hidden',allMatches.length>0);
      if(!allMatches.length)$('message').textContent='Nenhuma partida encontrada neste período. Tente ampliar as datas.';
