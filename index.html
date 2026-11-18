@@ -1980,13 +1980,12 @@ async function apiRequest(params, account='live'){
 }
 /* ========= FONTE STREMIO (addon FrostStream) ========= */
 const STREMIO_ADDON = 'https://froststream.cloutteam.com/usr_9cb7788d82cd6157e7c1';
-const STREMIO_CHANNEL_ADDON = 'https://frostview.cloutteam.com';
 const STREMIO_CINEMETA = 'https://v3-cinemeta.strem.io'; // catálogo/meta de filmes e séries (o addon só publica catálogo de TV)
 const STREMIO_GENRES_PT = {Action:'Ação',Adventure:'Aventura',Animation:'Animação',Biography:'Biografia',Comedy:'Comédia',Crime:'Crime',Documentary:'Documentário',Drama:'Drama',Family:'Infantil e Família',Fantasy:'Fantasia','Game-Show':'Game Show',History:'História',Horror:'Terror',Mystery:'Mistério',News:'Notícias','Reality-TV':'Reality Show',Romance:'Romance','Sci-Fi':'Ficção Científica',Sport:'Esporte','Talk-Show':'Talk Show',Thriller:'Suspense',War:'Guerra',Western:'Faroeste'};
 const STREMIO_MOVIE_GENRES = ['Action','Adventure','Animation','Biography','Comedy','Crime','Documentary','Drama','Family','Fantasy','History','Horror','Mystery','Romance','Sci-Fi','Sport','Thriller','War','Western'];
 const STREMIO_SERIES_GENRES = STREMIO_MOVIE_GENRES.concat(['Game-Show','News','Reality-TV','Talk-Show']);
-const STREMIO_TYPE = {canais:'channel', filmes:'movie', series:'series'};
-let stremioManifestPromise = null, stremioChannelManifestPromise = null, stremioPlayToken = 0;
+const STREMIO_TYPE = {canais:'tv', filmes:'movie', series:'series'};
+let stremioManifestPromise = null, stremioPlayToken = 0;
 
 async function stremioGet(base, path){
   const url = base + path;
@@ -2000,10 +1999,6 @@ async function stremioGet(base, path){
 function stremioManifest(){
   if(!stremioManifestPromise) stremioManifestPromise = stremioGet(STREMIO_ADDON, '/manifest.json').catch(e => { stremioManifestPromise = null; throw e; });
   return stremioManifestPromise;
-}
-function stremioChannelManifest(){
-  if(!stremioChannelManifestPromise) stremioChannelManifestPromise = stremioGet(STREMIO_CHANNEL_ADDON, '/manifest.json').catch(e => { stremioChannelManifestPromise = null; throw e; });
-  return stremioChannelManifestPromise;
 }
 async function stremioCatalog(base, type, id, genre, maxPages){
   const out = []; let first = '';
@@ -2043,11 +2038,10 @@ async function loadSectionData(view){
 
   try{
     const type = STREMIO_TYPE[view];
-    const sourceAddon = view === 'canais' ? STREMIO_CHANNEL_ADDON : STREMIO_ADDON;
-    const man = await (view === 'canais' ? stremioChannelManifest() : stremioManifest()).catch(() => null);
-    const own = man && (man.catalogs || []).find(c => c.type === type || (view === 'canais' && c.type === 'tv'));
+    const man = await stremioManifest().catch(() => null);
+    const own = man && (man.catalogs || []).find(c => c.type === type);
     const catalogType = own && own.type ? own.type : type;
-    const base = own ? sourceAddon : STREMIO_CINEMETA;
+    const base = own ? STREMIO_ADDON : STREMIO_CINEMETA;
     const catId = own ? own.id : 'top';
     let genres = own ? (((own.extra || []).find(x => x.name === 'genre') || {}).options || []) : (view === 'filmes' ? STREMIO_MOVIE_GENRES : STREMIO_SERIES_GENRES);
     if(own && !genres.length) genres = [''];
@@ -2097,9 +2091,7 @@ let pendingPlaySources = null;
 async function stremioStreams(type, id){
   let streams = [];
   try{
-    const streamAddon = type === 'tv' || type === 'channel' ? STREMIO_CHANNEL_ADDON : STREMIO_ADDON;
-    const streamType = type === 'tv' ? 'channel' : type;
-    const d = await stremioGet(streamAddon, `/stream/${streamType}/${encodeURIComponent(id)}.json`);
+    const d = await stremioGet(STREMIO_ADDON, `/stream/${type}/${encodeURIComponent(id)}.json`);
     streams = ((d && d.streams) || []).filter(s => s && typeof s.url === 'string' && /^https?:/i.test(s.url));
   }catch(_){}
   streams = streams.filter((s, i, a) => a.findIndex(x => x.url === s.url) === i);
