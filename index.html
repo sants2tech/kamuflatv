@@ -1548,7 +1548,6 @@ button,a,.card,.epg-row,.pepg-row{ -webkit-tap-highlight-color:transparent; }
     <li><button class="nav-btn" data-view="series" type="button" aria-label="Séries" title="Séries"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="m10 9 5 3-5 3z"/><path d="M8 21h8"/><path d="M12 17v4"/></svg><span>Séries</span></button></li>
     <li><button class="nav-btn" data-view="kids" type="button" aria-label="Kids" title="Kids"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 5.8 5.8 1.9-5.8 1.9L12 18.4l-1.9-5.8L4.3 10.7l5.8-1.9z"/><path d="M19 3v4"/><path d="M21 5h-4"/></svg><span>Kids</span></button></li>
     <li><button class="nav-btn" data-view="favoritos" type="button" aria-label="Minha Lista" title="Minha Lista"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg><span>Minha Lista</span></button></li>
-    <li><a class="nav-btn" href="./futebol.html" aria-label="Futebol" title="Futebol"><span aria-hidden="true" style="font-size:1.25rem;line-height:1">⚽</span><span>Futebol</span></a></li>
   </ul>
 </aside>
 
@@ -2098,8 +2097,17 @@ async function stremioStreams(type, id){
     streams = ((d && d.streams) || []).filter(s => s && typeof s.url === 'string' && /^https?:/i.test(s.url));
   }catch(_){}
   streams = streams.filter((s, i, a) => a.findIndex(x => x.url === s.url) === i);
-  const notReady = s => (s.behaviorHints && s.behaviorHints.notWebReady) ? 1 : 0;
-  streams.sort((a, b) => notReady(a) - notReady(b));
+  // O addon pode publicar MPEG-TS antes do HLS. Navegadores não tocam
+  // .ts direto de forma consistente; priorize HLS e formatos de vídeo.
+  const sourceRank = s => {
+    const url = String(s.url || '').toLowerCase();
+    const hint = s.behaviorHints && s.behaviorHints.notWebReady ? 2 : 0;
+    if (/\.m3u8(?:\?|$)/i.test(url)) return hint;
+    if (/\.(mp4|webm|mkv)(?:\?|$)/i.test(url) || /\/movie\//i.test(url)) return 1 + hint;
+    if (/\.ts(?:\?|$)/i.test(url)) return 6 + hint;
+    return 3 + hint;
+  };
+  streams.sort((a, b) => sourceRank(a) - sourceRank(b));
   return streams;
 }
 function stremioSourceLabel(s, i){
@@ -3020,6 +3028,11 @@ function showContentDetailModal(item, view, plot, genre, rating, year, extraInfo
 const video = $('video');
 let playerStallTimer=null;
 let playerAdaptiveTimer=null;
+video.addEventListener('error',()=>{
+  if(state.currentPlaybackSwitch)return;
+  const detail=video.error ? `${video.error.code}:${video.error.message||''}` : 'erro de mídia';
+  if(!tryNextPlayerSource(detail)) console.error('[player] Nenhuma fonte reproduzível restante.',detail);
+});
 video.addEventListener('waiting',()=>{
   clearTimeout(playerStallTimer);
   playerStallTimer=setTimeout(()=>{
@@ -3045,7 +3058,22 @@ function applyAdaptiveNetworkCap(hls){
   hls.autoLevelCapping=max>=0?max:0;
 }
 function safeVideoPlay(){try{const result=video.play();if(result&&typeof result.catch==='function')result.catch(function(error){console.warn('[player]',error);});}catch(error){console.warn('[player]',error);}}
-
+let playerFallbackBusy = false;
+function tryNextPlayerSource(reason){
+  if(playerFallbackBusy) return false;
+  const list = state.currentSources || [];
+  const current = Number(state.currentSourceIndex || 0);
+  if(current >= list.length - 1) return false;
+  playerFallbackBusy = true;
+  const next = current + 1;
+  pendingPlaySources = {list, index:next, ref:state.currentSourceRef, resumeAt:(!state.currentIsLive && Number(video.currentTime)>1) ? Number(video.currentTime) : 0};
+  console.warn('[player] Fonte indisponível; tentando a próxima.', reason || 'erro de reprodução', next + 1, '/', list.length);
+  setTimeout(() => {
+    playerFallbackBusy = false;
+    play(list[next].url, state.currentTitle, state.currentIsLive, state.currentItem, state.currentMediaView, pendingPlaySources.resumeAt > 0);
+  }, 0);
+  return true;
+}
 function playChannelById(id, name){
   if(playerEPGVisible)togglePlayerEPG();
   const channel = (cache.canais.items || []).find(ch => itemId(ch) === String(id));
@@ -3197,7 +3225,7 @@ function play(url, title, isLive, item, view, resumeFromSaved){
       } else if(data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRecoveries < 4){
         mediaRecoveries++;
         try{ hlsPlayer.recoverMediaError(); }catch(error){ console.warn('[HLS] Falha ao recuperar mídia:', error); }
-      } else {
+      } else if(!tryNextPlayerSource(data.details)) {
         console.error('[HLS] Não foi possível recuperar o fluxo. Verifique a origem do canal.', data);
       }
     });
