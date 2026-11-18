@@ -1574,7 +1574,7 @@ button,a,.card,.epg-row,.pepg-row{ -webkit-tap-highlight-color:transparent; }
         <span class="epg-count-badge" id="epgCount">0 canais</span>
       </h2>
       <div class="epg-grid-container">
-        <div class="epg-header"><span>CANAL</span><span>PROGRAMAÇÃO ATUAL</span></div>
+        <div class="epg-header"><span>CANAL</span><span>PROGRAMAÇÃO ATUAL · <span id="epgSourceStatus">Carregando guia...</span></span></div>
         <div id="epgList" class="epg-list"></div>
       </div>
     </section>
@@ -1923,7 +1923,7 @@ const PROXIES = [
 ];
 async function fetchWithTimeout(url, ms){
   const c = typeof AbortController!=='undefined' ? new AbortController() : null; const t = setTimeout(() => {if(c)c.abort();}, ms);
-  try{ const r = await fetch(url, {signal:c?c.signal:undefined, credentials:'omit', headers:{'Accept':'application/json'}}); clearTimeout(t); return r; }
+  try{ const r = await fetch(url, {signal:c?c.signal:undefined, credentials:'omit', cache:'no-store', headers:{'Accept':'application/json, application/xml, text/xml, */*'}}); clearTimeout(t); return r; }
   catch(e){ clearTimeout(t); throw e; }
 }
 function firstSuccessful(promises){
@@ -2269,7 +2269,11 @@ function loadExternalEPG(){
   if(externalEPGPromise) return externalEPGPromise;
   externalEPGLoading = true;
   externalEPGPromise=(async()=>{
-    const sources = [EPG_XML_URL, 'https://api.allorigins.win/raw?url=' + encodeURIComponent(EPG_XML_URL)];
+    const sources = [
+      EPG_XML_URL,
+      'https://cdn.jsdelivr.net/gh/sants2tech/epg-xtream-personalizado@main/public/epg.xml',
+      'https://api.allorigins.win/raw?url=' + encodeURIComponent(EPG_XML_URL)
+    ];
     for(const src of sources){
       try{
         const res = await fetchWithTimeout(src, 30000);
@@ -2279,6 +2283,10 @@ function loadExternalEPG(){
         if(Object.keys(parsed).length > 0){
           externalEPG = parsed;
           externalEPGMap = new Map(Object.entries(parsed).filter(([key]) => !key.startsWith('id:')));
+          const idsWithGuide = Object.keys(parsed).filter(key => key.startsWith('id:')).length;
+          const status = $('epgSourceStatus');
+          if(status) status.textContent = 'EPG carregada · ' + idsWithGuide + ' canais com programação';
+          console.info('[EPG] XMLTV carregada:', idsWithGuide, 'canais com programação');
           return externalEPG;
         }
       }catch(e){ console.warn('[EPG] Falha ao carregar XMLTV:', e); }
@@ -2286,7 +2294,11 @@ function loadExternalEPG(){
     return null;
   })().finally(()=>{
     externalEPGLoading = false;
-    if(!externalEPG) setTimeout(()=>{externalEPGPromise=null;},60000);
+    if(!externalEPG){
+      const status = $('epgSourceStatus');
+      if(status) status.textContent = 'Não foi possível carregar o XMLTV · tentando novamente';
+      setTimeout(()=>{externalEPGPromise=null;},60000);
+    }
   });
   return externalEPGPromise;
 }
@@ -2441,7 +2453,7 @@ function renderPlayerEPGProgram(programDiv,result,currentTime=Date.now()){
 
 function renderEPGProgram(programDiv,result,currentTime=Date.now()){
   if(!result||!result.programs||!result.programs.length){
-    programDiv.innerHTML='<div class="epg-title"><span>📺 Programação Contínua</span></div><div class="epg-time">Transmissão ao vivo 24h</div>';
+    programDiv.innerHTML='<div class="epg-title"><span>📺 EPG não disponível para este canal</span></div><div class="epg-time">Nenhuma fonte retornou uma programação correspondente</div>';
     return;
   }
   const selected=getCurrentAndNextEPG(result,currentTime);
