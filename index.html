@@ -1670,6 +1670,7 @@ button,a,.card,.epg-row,.pepg-row{ -webkit-tap-highlight-color:transparent; }
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17"></script>
+<script src="./channel-registry.js"></script>
 <script>
 (function(){
 'use strict';
@@ -2223,10 +2224,11 @@ let externalEPGLoading = false;
 let externalEPGMap = null;
 let externalEPGPromise = null;
 let externalChannelDB = new Map();
+let channelRegistry = window.KTVChannelRegistry ? window.KTVChannelRegistry.build([]) : null;
 let epgRenderToken = 0;
 
 function normalizeChannelName(name){
-  return String(name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s*(hd|fhd|sd|4k|uhd|\+)\s*$/i, '').replace(/\s+/g, ' ').trim();
+  return window.KTVChannelRegistry ? window.KTVChannelRegistry.normalize(name) : String(name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s*(hd|fhd|sd|4k|uhd|\+)\s*$/i, '').replace(/\s+/g, ' ').trim();
 }
 
 function parseXMLTV(xmlText){
@@ -2309,6 +2311,7 @@ function loadExternalEPG(){
       .then(db => {
         const rows = Array.isArray(db && db.channels) ? db.channels : [];
         externalChannelDB = new Map(rows.map(ch => [String(ch.id || ''), ch]).filter(([id]) => id));
+        channelRegistry = window.KTVChannelRegistry ? window.KTVChannelRegistry.build(rows) : null;
         console.info('[EPG] Banco próprio carregado:', rows.length, 'canais;', db.channels_with_epg || 0, 'com EPG');
         return db;
       }).catch(e => { console.warn('[EPG] Banco próprio indisponível:', e); return null; });
@@ -2354,21 +2357,22 @@ function loadExternalEPG(){
   return externalEPGPromise;
 }
 
-function fuzzyMatchChannel(chName, epgMap){
-  if(!epgMap || !epgMap.size) return null;
-  const norm = normalizeChannelName(chName);
-  if(epgMap.has(norm)) return epgMap.get(norm);
-
-  const words = norm.split(' ').filter(w => w.length > 2);
-  if(!words.length) return null;
-  let bestMatch = null, bestScore = 0;
-  for(const [key, programs] of epgMap.entries()){
-    let score = 0;
-    words.forEach(w => { if(key.includes(w)) score++; });
-    if(score > bestScore){ bestScore = score; bestMatch = programs; }
+function resolveChannelEPG(channel){
+  const chId = itemId(channel), chName = itemName(channel);
+  const dbChannel = externalChannelDB.get(chId) || null;
+  const resolved = channelRegistry && channelRegistry.resolve({id:chId, name:chName});
+  const record = dbChannel || (resolved && resolved.record) || null;
+  const aliases = record && Array.isArray(record.aliases) ? record.aliases : [];
+  const candidates = [chName].concat(aliases).map(normalizeChannelName).filter(Boolean);
+  const epgIds = [];
+  if(record){
+    [record.epg_id, record.xmltv_id]
+      .concat(Array.isArray(record.epg_ids) ? record.epg_ids : [])
+      .concat(Array.isArray(record.epg_source_ids) ? record.epg_source_ids : [])
+      .forEach(id => { if(id != null && String(id).trim()) epgIds.push(String(id).trim()); });
   }
-  if(bestScore >= Math.max(1, Math.floor(words.length / 2))) return bestMatch;
-  return null;
+  if(chId) epgIds.push(chId);
+  return {record, candidates:[...new Set(candidates)], epgIds:[...new Set(epgIds)]};
 }
 
 function parseXtreamDate(ts, dateStr) {
@@ -2392,26 +2396,16 @@ async function fetchEPGForChannel(channel){
   let result = null;
   if(!externalEPG) await loadExternalEPG();
   if(externalEPG){
-    const dbChannel = chId ? externalChannelDB.get(chId) : null;
-    const mappedId = dbChannel && dbChannel.epg_id ? String(dbChannel.epg_id) : chId;
-    const byId = mappedId ? externalEPG['id:' + mappedId] : null;
-    if(byId && byId.length) result = { programs: byId.slice(), source: 'epg-id' };
-    if(!result && dbChannel && Array.isArray(dbChannel.aliases)){
-      for(const alias of dbChannel.aliases){
-        const aliasKey = normalizeChannelName(alias);
-        if(externalEPG[aliasKey] && externalEPG[aliasKey].length){
-          result = { programs: externalEPG[aliasKey].slice(), source: 'epg-database-alias' };
-          break;
-        }
+    const identity = resolveChannelEPG(channel);
+    for(const mappedId of identity.epgIds){
+      const byId = externalEPG['id:' + mappedId];
+      if(byId && byId.length){ result = { programs: byId.slice(), source: mappedId === chId ? 'epg-id' : 'epg-mapped-id' }; break; }
+    }
+    if(!result) for(const aliasKey of identity.candidates){
+      if(externalEPG[aliasKey] && externalEPG[aliasKey].length){
+        result = { programs: externalEPG[aliasKey].slice(), source: 'epg-library-alias' };
+        break;
       }
-    }
-    if(!result){
-      const key = normalizeChannelName(chName);
-      if(externalEPG[key] && externalEPG[key].length) result = { programs: externalEPG[key].slice(), source: 'epg-name' };
-    }
-    if(!result){
-      const fuzzy = fuzzyMatchChannel(chName, externalEPGMap);
-      if(fuzzy && fuzzy.length) result = { programs: fuzzy.slice(), source: 'epg-fuzzy' };
     }
     if(result){
       const now = Date.now();

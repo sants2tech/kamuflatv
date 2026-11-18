@@ -25,3 +25,9 @@ A aplicação consulta os serviços de conteúdo e o XMLTV configurados no próp
 ## Atualizações
 
 Edite o `index.html` e publique as alterações na branch `main`. Recomenda-se testar a aplicação em navegador desktop e no dispositivo de destino após cada atualização.
+
+## Identidade de canais e EPG
+
+O arquivo `channel-registry.js` é a biblioteca de identidade usada pelo guia. Ela indexa o ID do catálogo, o nome canônico e os aliases publicados em `biblioteca_canais.json`. A resolução é conservadora: IDs têm prioridade; depois entram aliases exatos e equivalências regionais. Não existe mais um fuzzy global que possa associar uma afiliada de Minas à grade de São Paulo ou Brasília.
+
+O gerador do repositório [epg-xtream-personalizado](https://github.com/sants2tech/epg-xtream-personalizado) publica, para cada canal, `epg_id`, `epg_source_ids`, `epg_source_names`, `epg_match_methods` e `coverage_source`. `coverage_source` distingue uma associação encontrada em fonte XMLTV de uma grade válida reaproveitada da execução anterior.
