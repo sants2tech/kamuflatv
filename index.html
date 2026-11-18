@@ -2301,11 +2301,8 @@ function loadExternalEPG(){
   externalEPGLoading = true;
   externalEPGPromise=(async()=>{
     const sources = [
-      {url: EPG_JSON_URL, type: 'json'},
-      {url: 'https://cdn.jsdelivr.net/gh/sants2tech/epg-xtream-personalizado@main/public/epg-stremio.json', type: 'json'},
-      {url: EPG_XML_URL, type: 'xml'},
-      {url: 'https://cdn.jsdelivr.net/gh/sants2tech/epg-xtream-personalizado@main/public/epg.xml', type: 'xml'},
-      {url: 'https://api.allorigins.win/raw?url=' + encodeURIComponent(EPG_XML_URL), type: 'xml'}
+      {url: EPG_JSON_URL + '?v=' + Date.now(), type: 'json'},
+      {url: 'https://cdn.jsdelivr.net/gh/sants2tech/epg-xtream-personalizado@main/public/epg-stremio.json', type: 'json'}
     ];
     for(const source of sources){
       try{
@@ -2329,7 +2326,7 @@ function loadExternalEPG(){
     externalEPGLoading = false;
     if(!externalEPG){
       const status = $('epgSourceStatus');
-      if(status) status.textContent = 'Não foi possível carregar o XMLTV · tentando novamente';
+      if(status) status.textContent = 'Não foi possível carregar a grade Stremio · tentando novamente';
       setTimeout(()=>{
         externalEPGPromise=null;
         if(state.view==='canais' && !externalEPG){
