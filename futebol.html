@@ -62,7 +62,7 @@ footer{max-width:1440px;margin:auto;padding:0 24px 28px;color:#78879a;font-size:
 (()=> {
  const API='https://kamuflatv-futebol-api.matheuusmendes0.workers.dev';
  const SPORTS_ORIGIN='https://sportsapi.com.br';
- let allMatches=[],statusFilter='all';
+ let allMatches=[],statusFilter='all',connected=false;
  const $=id=>document.getElementById(id);
  const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo'}).format(new Date());
  const shift=(date,n)=>{const d=new Date(date+'T12:00:00');d.setDate(d.getDate()+n);return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo'}).format(d)};
@@ -114,11 +114,11 @@ footer{max-width:1440px;margin:auto;padding:0 24px 28px;color:#78879a;font-size:
      return '<article class="match '+(live?'live':'')+'"><div class="match-top"><span class="league">'+safe(m.league?.name||'Competição não informada')+(m.league?.country?' · '+safe(m.league.country):'')+'</span><span class="pill '+(live?'live':finished?'done':'')+'">'+statusLabel(m)+minute+'</span></div><div class="teams"><div class="team"><img class="crest" src="'+safe(homeLogo)+'" alt="" onerror="this.style.visibility=\'hidden\'"><span class="team-name">'+safe(m.homeTeam?.name||'Mandante')+'</span></div>'+score+'<div class="team away"><img class="crest" src="'+safe(awayLogo)+'" alt="" onerror="this.style.visibility=\'hidden\'"><span class="team-name">'+safe(m.awayTeam?.name||'Visitante')+'</span></div></div><div class="subline"><span>'+kickoff+' · Brasília</span><span>'+safe(m.venue?.name||'Local não informado')+'</span></div><div class="broadcast"><span class="tv">📺</span><div class="channels">'+ch+'</div></div></article>';
    }).join('');
  }
- $('connect').addEventListener('click',()=>fetchAll());
+ $('connect').addEventListener('click',()=>{connected=true;fetchAll();});
  $('load').addEventListener('click',fetchAll);$('refresh').addEventListener('click',fetchAll);$('search').addEventListener('input',render);
  $('statusTabs').addEventListener('click',e=>{const b=e.target.closest('[data-status]');if(!b)return;statusFilter=b.dataset.status;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===b));render()});
  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('setup').classList.contains('hidden'))$('setup').classList.remove('hidden')});
- setDates();$('dateTo').value=shift(today(),0);
+ setDates();$('dateTo').value=shift(today(),0);setInterval(()=>{if(connected)fetchAll()},60000);
 })();
 </script>
 </body>
