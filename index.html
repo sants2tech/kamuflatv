@@ -4211,5 +4211,50 @@ keepScreenAwake();
 @media(max-width:700px){.player-inline-setting.active{width:100%!important;max-width:100%!important;align-items:center!important}.player-inline-setting.active select{flex:1!important;min-width:0!important;max-height:116px!important}.player-inline-setting.active label{padding-top:0!important}}
 </style>
 
+<script id="kamuflatv-branding">
+/* Exibe a marca KamuflaTV sem alterar o endereço nem a integração do addon Stremio. */
+(function(){
+  const replaceBrand = value => String(value || '').replace(/FrostStream|FrostView/gi, 'KamuflaTV');
+  function updateBranding(root){
+    if(!root) return;
+    const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
+    let node;
+    while((node=walker.nextNode())){
+      if(/FrostStream|FrostView/i.test(node.nodeValue)) node.nodeValue=replaceBrand(node.nodeValue);
+    }
+    if(root.querySelectorAll){
+      root.querySelectorAll('[title],[aria-label],[placeholder],[alt]').forEach(el=>{
+        ['title','aria-label','placeholder','alt'].forEach(attr=>{
+          const value=el.getAttribute(attr);
+          if(value && /FrostStream|FrostView/i.test(value)) el.setAttribute(attr,replaceBrand(value));
+        });
+      });
+    }
+  }
+  function apply(){
+    document.title=replaceBrand(document.title);
+    updateBranding(document.body);
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',apply,{once:true});
+  else apply();
+  new MutationObserver(records=>{
+    for(const record of records){
+      if(record.type==='childList') record.addedNodes.forEach(node=>{
+        if(node.nodeType===Node.TEXT_NODE){
+          if(/FrostStream|FrostView/i.test(node.nodeValue)) node.nodeValue=replaceBrand(node.nodeValue);
+        }else if(node.nodeType===Node.ELEMENT_NODE) updateBranding(node);
+      });
+      else if(record.type==='characterData' && /FrostStream|FrostView/i.test(record.target.nodeValue)){
+        record.target.nodeValue=replaceBrand(record.target.nodeValue);
+      }
+      else if(record.type==='attributes'){
+        const el=record.target, attr=record.attributeName, value=el.getAttribute(attr);
+        if(value && /FrostStream|FrostView/i.test(value)) el.setAttribute(attr,replaceBrand(value));
+      }
+    }
+  }).observe(document.documentElement,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['title','aria-label','placeholder','alt']});
+})();
+</script>
+
 </body>
 </html>
