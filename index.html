@@ -1699,6 +1699,7 @@ const XTREAM = {
 };
 const EPG_XML_URL = 'https://raw.githubusercontent.com/sants2tech/epg-xtream-personalizado/main/public/epg.xml';
 const EPG_JSON_URL = 'https://raw.githubusercontent.com/sants2tech/epg-xtream-personalizado/main/public/epg-stremio.json';
+const CHANNEL_DB_URL = 'https://raw.githubusercontent.com/sants2tech/epg-xtream-personalizado/main/public/banco_canais.json';
 function getXtreamAccount(account){
   return account === 'vod' ? XTREAM.vod : XTREAM.live;
 }
@@ -2220,6 +2221,7 @@ let externalEPG = null;
 let externalEPGLoading = false;
 let externalEPGMap = null;
 let externalEPGPromise = null;
+let externalChannelDB = new Map();
 let epgRenderToken = 0;
 
 function normalizeChannelName(name){
@@ -2301,6 +2303,14 @@ function loadExternalEPG(){
   if(externalEPGPromise) return externalEPGPromise;
   externalEPGLoading = true;
   externalEPGPromise=(async()=>{
+    const dbPromise = fetchWithTimeout(CHANNEL_DB_URL + '?v=' + Date.now(), 20000)
+      .then(r => { if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(db => {
+        const rows = Array.isArray(db && db.channels) ? db.channels : [];
+        externalChannelDB = new Map(rows.map(ch => [String(ch.id || ''), ch]).filter(([id]) => id));
+        console.info('[EPG] Banco próprio carregado:', rows.length, 'canais;', db.channels_with_epg || 0, 'com EPG');
+        return db;
+      }).catch(e => { console.warn('[EPG] Banco próprio indisponível:', e); return null; });
     const sources = [
       {url: EPG_JSON_URL + '?v=' + Date.now(), type: 'json'},
       {url: 'https://cdn.jsdelivr.net/gh/sants2tech/epg-xtream-personalizado@main/public/epg-stremio.json', type: 'json'}
@@ -2314,9 +2324,11 @@ function loadExternalEPG(){
         if(Object.keys(parsed).length > 0){
           externalEPG = parsed;
           externalEPGMap = new Map(Object.entries(parsed).filter(([key]) => !key.startsWith('id:')));
+          await dbPromise;
           const idsWithGuide = Object.keys(parsed).filter(key => key.startsWith('id:')).length;
+          const totalInDB = externalChannelDB.size;
           const status = $('epgSourceStatus');
-          if(status) status.textContent = 'EPG carregada · ' + idsWithGuide + ' canais com programação';
+          if(status) status.textContent = 'Banco: ' + totalInDB + ' canais · EPG disponível: ' + idsWithGuide;
           console.info('[EPG] Guia carregado:', idsWithGuide, 'canais com programação', 'fonte:', source.type, source.url);
           return externalEPG;
         }
@@ -2379,8 +2391,19 @@ async function fetchEPGForChannel(channel){
   let result = null;
   if(!externalEPG) await loadExternalEPG();
   if(externalEPG){
-    const byId = chId ? externalEPG['id:' + chId] : null;
+    const dbChannel = chId ? externalChannelDB.get(chId) : null;
+    const mappedId = dbChannel && dbChannel.epg_id ? String(dbChannel.epg_id) : chId;
+    const byId = mappedId ? externalEPG['id:' + mappedId] : null;
     if(byId && byId.length) result = { programs: byId.slice(), source: 'epg-id' };
+    if(!result && dbChannel && Array.isArray(dbChannel.aliases)){
+      for(const alias of dbChannel.aliases){
+        const aliasKey = normalizeChannelName(alias);
+        if(externalEPG[aliasKey] && externalEPG[aliasKey].length){
+          result = { programs: externalEPG[aliasKey].slice(), source: 'epg-database-alias' };
+          break;
+        }
+      }
+    }
     if(!result){
       const key = normalizeChannelName(chName);
       if(externalEPG[key] && externalEPG[key].length) result = { programs: externalEPG[key].slice(), source: 'epg-name' };
