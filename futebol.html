@@ -40,10 +40,8 @@ footer{max-width:1440px;margin:auto;padding:0 24px 28px;color:#78879a;font-size:
     <div class="small" id="todayLabel"></div>
   </section>
   <div class="settings" id="setup">
-    <input class="field" id="apiKey" type="password" autocomplete="off" placeholder="Cole sua chave SportsAPI (sapi_...)">
-    <button class="btn primary" id="connect">Conectar fonte de jogos</button>
-    <a class="btn" href="https://sportsapi.com.br/integracao" target="_blank" rel="noopener">Obter chave</a>
-    <div class="small" style="flex-basis:100%">A chave fica somente na memória desta aba e não é salva. Para uso permanente no KamuflaTV, o ideal é configurar a chave como segredo no Cloudflare Worker, nunca no HTML público.</div>
+    <div><strong>Configuração segura da fonte</strong><div class="small">Crie uma chave em <a href="https://sportsapi.com.br/integracao" target="_blank" rel="noopener" style="color:#ff7b88;text-decoration:underline">SportsAPI</a>. No Cloudflare, abra Workers & Pages → kamuflatv-futebol-api → Settings → Variables and Secrets → Add secret. Nome: <b>SPORTS_API_KEY</b>. Valor: sua chave. Salve e volte aqui.</div></div>
+    <button class="btn primary" id="connect">Testar conexão</button>
   </div>
   <div class="toolbar">
     <input class="field" type="date" id="dateFrom" aria-label="Data inicial">
@@ -62,8 +60,8 @@ footer{max-width:1440px;margin:auto;padding:0 24px 28px;color:#78879a;font-size:
 <footer>Os horários são exibidos no fuso de Brasília. Canais dependem da cobertura informada pela fonte e podem sofrer alterações pelas emissoras. KamuflaTV não hospeda nem transmite os jogos.</footer>
 <script>
 (()=> {
- const API='https://sportsapi.com.br/api/v1';
- let apiKey='',allMatches=[],statusFilter='all',timer=null;
+ const API='https://kamuflatv-futebol-api.matheuusmendes0.workers.dev';
+ let allMatches=[],statusFilter='all';
  const $=id=>document.getElementById(id);
  const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo'}).format(new Date());
  const shift=(date,n)=>{const d=new Date(date+'T12:00:00');d.setDate(d.getDate()+n);return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo'}).format(d)};
@@ -74,7 +72,6 @@ footer{max-width:1440px;margin:auto;padding:0 24px 28px;color:#78879a;font-size:
  const statusLabel=m=>m.status==='live'?'AO VIVO':m.status==='finished'?'ENCERRADO':m.status==='postponed'?'ADIADO':m.status==='cancelled'?'CANCELADO':'AGENDADO';
  function setDates(){const t=today();$('dateFrom').value=t;$('dateTo').value=t;$('todayLabel').textContent=fmtDate(t)}
  async function fetchAll(){
-   if(!apiKey){$('message').classList.remove('hidden');$('message').innerHTML='<strong>Conecte uma chave para carregar os jogos.</strong>';return}
    const from=$('dateFrom').value,to=$('dateTo').value;
    if(!from||!to||to<from){$('message').textContent='Confira o intervalo de datas.';return}
    if((new Date(to+'T12:00:00')-new Date(from+'T12:00:00'))/86400000>29){$('message').textContent='Escolha um intervalo de até 30 dias por consulta.';return}
@@ -97,7 +94,7 @@ footer{max-width:1440px;margin:auto;padding:0 24px 28px;color:#78879a;font-size:
    }
  }
  async function request(params){
-   const r=await fetch(API+'/games/filter?'+params.toString(),{headers:{'X-API-Key':apiKey,Accept:'application/json'}});
+   const r=await fetch(API+'/games/filter?'+params.toString(),{headers:{Accept:'application/json'}});
    if(!r.ok){let detail='HTTP '+r.status;try{const j=await r.json();detail=j.message||j.error||detail}catch{}throw new Error(detail)}
    return r.json();
  }
@@ -115,7 +112,7 @@ footer{max-width:1440px;margin:auto;padding:0 24px 28px;color:#78879a;font-size:
      return '<article class="match '+(live?'live':'')+'"><div class="match-top"><span class="league">'+safe(m.league?.name||'Competição não informada')+(m.league?.country?' · '+safe(m.league.country):'')+'</span><span class="pill '+(live?'live':finished?'done':'')+'">'+statusLabel(m)+minute+'</span></div><div class="teams"><div class="team"><img class="crest" src="'+safe(homeLogo)+'" alt="" onerror="this.style.visibility=\'hidden\'"><span class="team-name">'+safe(m.homeTeam?.name||'Mandante')+'</span></div>'+score+'<div class="team away"><img class="crest" src="'+safe(awayLogo)+'" alt="" onerror="this.style.visibility=\'hidden\'"><span class="team-name">'+safe(m.awayTeam?.name||'Visitante')+'</span></div></div><div class="subline"><span>'+kickoff+' · Brasília</span><span>'+safe(m.venue?.name||'Local não informado')+'</span></div><div class="broadcast"><span class="tv">📺</span><div class="channels">'+ch+'</div></div></article>';
    }).join('');
  }
- $('connect').addEventListener('click',()=>{apiKey=$('apiKey').value.trim();if(!apiKey){$('message').textContent='Cole uma chave válida para continuar.';return}$('setup').classList.add('hidden');fetchAll();});
+ $('connect').addEventListener('click',()=>fetchAll());
  $('load').addEventListener('click',fetchAll);$('refresh').addEventListener('click',fetchAll);$('search').addEventListener('input',render);
  $('statusTabs').addEventListener('click',e=>{const b=e.target.closest('[data-status]');if(!b)return;statusFilter=b.dataset.status;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===b));render()});
  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('setup').classList.contains('hidden'))$('setup').classList.remove('hidden')});
