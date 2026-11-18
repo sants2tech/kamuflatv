@@ -1698,6 +1698,7 @@ const XTREAM = {
   }
 };
 const EPG_XML_URL = 'https://raw.githubusercontent.com/sants2tech/epg-xtream-personalizado/main/public/epg.xml';
+const EPG_JSON_URL = 'https://raw.githubusercontent.com/sants2tech/epg-xtream-personalizado/main/public/epg-stremio.json';
 function getXtreamAccount(account){
   return account === 'vod' ? XTREAM.vod : XTREAM.live;
 }
@@ -2264,32 +2265,64 @@ function parseXMLTV(xmlText){
   return epg;
 }
 
+function parseEPGJSON(data){
+  const epg = {};
+  const names = data && data.channel_names && typeof data.channel_names === 'object' ? data.channel_names : {};
+  const channels = data && data.channels && typeof data.channels === 'object' ? data.channels : {};
+
+  Object.entries(channels).forEach(([channelId, programs]) => {
+    if(!Array.isArray(programs) || !programs.length) return;
+    const normalized = programs.map(program => ({
+      start: String(program.start || ''),
+      stop: String(program.stop || ''),
+      title: String(program.title || 'Programa'),
+      desc: String(program.desc || ''),
+      isTimestamp: false
+    })).sort((a,b) => (parseEPGDate(a.start) ?? 0) - (parseEPGDate(b.start) ?? 0));
+
+    epg['id:' + String(channelId)] = normalized;
+
+    const nameKey = normalizeChannelName(names[channelId] || '');
+    if(nameKey){
+      if(!epg[nameKey]) epg[nameKey] = [];
+      epg[nameKey].push(...normalized);
+    }
+  });
+
+  Object.keys(epg).forEach(key => {
+    epg[key].sort((a,b) => (parseEPGDate(a.start) ?? 0) - (parseEPGDate(b.start) ?? 0));
+  });
+  return epg;
+}
+
 function loadExternalEPG(){
   if(externalEPG) return Promise.resolve(externalEPG);
   if(externalEPGPromise) return externalEPGPromise;
   externalEPGLoading = true;
   externalEPGPromise=(async()=>{
     const sources = [
-      EPG_XML_URL,
-      'https://cdn.jsdelivr.net/gh/sants2tech/epg-xtream-personalizado@main/public/epg.xml',
-      'https://api.allorigins.win/raw?url=' + encodeURIComponent(EPG_XML_URL)
+      {url: EPG_JSON_URL, type: 'json'},
+      {url: 'https://cdn.jsdelivr.net/gh/sants2tech/epg-xtream-personalizado@main/public/epg-stremio.json', type: 'json'},
+      {url: EPG_XML_URL, type: 'xml'},
+      {url: 'https://cdn.jsdelivr.net/gh/sants2tech/epg-xtream-personalizado@main/public/epg.xml', type: 'xml'},
+      {url: 'https://api.allorigins.win/raw?url=' + encodeURIComponent(EPG_XML_URL), type: 'xml'}
     ];
-    for(const src of sources){
+    for(const source of sources){
       try{
-        const res = await fetchWithTimeout(src, 30000);
+        const res = await fetchWithTimeout(source.url, 30000);
         if(!res.ok) throw new Error('HTTP ' + res.status);
-        const xmlText = await res.text();
-        const parsed = parseXMLTV(xmlText);
+        const payload = source.type === 'json' ? await res.json() : await res.text();
+        const parsed = source.type === 'json' ? parseEPGJSON(payload) : parseXMLTV(payload);
         if(Object.keys(parsed).length > 0){
           externalEPG = parsed;
           externalEPGMap = new Map(Object.entries(parsed).filter(([key]) => !key.startsWith('id:')));
           const idsWithGuide = Object.keys(parsed).filter(key => key.startsWith('id:')).length;
           const status = $('epgSourceStatus');
           if(status) status.textContent = 'EPG carregada · ' + idsWithGuide + ' canais com programação';
-          console.info('[EPG] XMLTV carregada:', idsWithGuide, 'canais com programação');
+          console.info('[EPG] Guia carregado:', idsWithGuide, 'canais com programação', 'fonte:', source.type, source.url);
           return externalEPG;
         }
-      }catch(e){ console.warn('[EPG] Falha ao carregar XMLTV:', e); }
+      }catch(e){ console.warn('[EPG] Falha ao carregar EPG:', source.url, e); }
     }
     return null;
   })().finally(()=>{
