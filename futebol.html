@@ -40,7 +40,7 @@ footer{max-width:1440px;margin:auto;padding:0 24px 28px;color:#78879a;font-size:
     <div class="small" id="todayLabel"></div>
   </section>
   <div class="settings" id="setup">
-    <div><strong>Configuração segura da fonte</strong><div class="small">Crie uma chave em <a href="https://sportsapi.com.br/integracao" target="_blank" rel="noopener" style="color:#ff7b88;text-decoration:underline">SportsAPI</a>. No Cloudflare, abra Workers & Pages → kamuflatv-futebol-api → Settings → Variables and Secrets → Add secret. Nome: <b>SPORTS_API_KEY</b>. Valor: sua chave. Salve e volte aqui.</div></div>
+    <div><strong>Conexão protegida</strong><div class="small">A página consulta o Worker do Cloudflare. A chave da SportsAPI deve ficar cadastrada somente como segredo <b>SPORTS_API_KEY</b> no Worker. Se ainda não cadastrou, abra <a href="https://dash.cloudflare.com/" target="_blank" rel="noopener" style="color:#ff7b88;text-decoration:underline">Cloudflare</a> → Workers & Pages → kamuflatv-futebol-api → Settings → Variables and Secrets → Add secret.</div></div>
     <button class="btn primary" id="connect">Testar conexão</button>
   </div>
   <div class="toolbar">
@@ -114,11 +114,12 @@ footer{max-width:1440px;margin:auto;padding:0 24px 28px;color:#78879a;font-size:
      return '<article class="match '+(live?'live':'')+'"><div class="match-top"><span class="league">'+safe(m.league?.name||'Competição não informada')+(m.league?.country?' · '+safe(m.league.country):'')+'</span><span class="pill '+(live?'live':finished?'done':'')+'">'+statusLabel(m)+minute+'</span></div><div class="teams"><div class="team"><img class="crest" src="'+safe(homeLogo)+'" alt="" onerror="this.style.visibility=\'hidden\'"><span class="team-name">'+safe(m.homeTeam?.name||'Mandante')+'</span></div>'+score+'<div class="team away"><img class="crest" src="'+safe(awayLogo)+'" alt="" onerror="this.style.visibility=\'hidden\'"><span class="team-name">'+safe(m.awayTeam?.name||'Visitante')+'</span></div></div><div class="subline"><span>'+kickoff+' · Brasília</span><span>'+safe(m.venue?.name||'Local não informado')+'</span></div><div class="broadcast"><span class="tv">📺</span><div class="channels">'+ch+'</div></div></article>';
    }).join('');
  }
- $('connect').addEventListener('click',()=>{connected=true;fetchAll();});
+ async function testConnection(){const button=$('connect');button.disabled=true;button.textContent='Testando…';$('connection').textContent='Verificando Worker e chave da API…';try{const r=await fetch(API+'/health',{headers:{Accept:'application/json'}});if(!r.ok)throw new Error('Worker respondeu HTTP '+r.status);const h=await r.json();if(!h.apiKeyConfigured){$('message').classList.remove('hidden');$('message').innerHTML='<strong>Worker publicado, mas falta cadastrar a chave da SportsAPI.</strong><br>No Cloudflare, abra Workers & Pages → kamuflatv-futebol-api → Settings → Variables and Secrets → Add secret. Use o nome <b>SPORTS_API_KEY</b>, cole a chave privada da SportsAPI e salve. Depois clique em Testar conexão novamente.';$('connection').textContent='Aguardando chave privada';return;}connected=true;$('setup').classList.add('hidden');await fetchAll();}catch(e){$('message').classList.remove('hidden');$('message').innerHTML='<strong>Não foi possível validar a conexão.</strong><br>'+safe(e.message)+'<br>Confira se o Worker está ativo no Cloudflare.';$('connection').textContent='Worker indisponível';}finally{button.disabled=false;button.textContent='Testar conexão';}}
+ $('connect').addEventListener('click',testConnection);
  $('load').addEventListener('click',fetchAll);$('refresh').addEventListener('click',fetchAll);$('search').addEventListener('input',render);
  $('statusTabs').addEventListener('click',e=>{const b=e.target.closest('[data-status]');if(!b)return;statusFilter=b.dataset.status;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===b));render()});
  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('setup').classList.contains('hidden'))$('setup').classList.remove('hidden')});
- setDates();$('dateTo').value=shift(today(),0);setInterval(()=>{if(connected)fetchAll()},60000);
+ setDates();$('dateTo').value=shift(today(),0);setInterval(()=>{if(connected)fetchAll()},60000);testConnection();
 })();
 </script>
 </body>
