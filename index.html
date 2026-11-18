@@ -2297,7 +2297,14 @@ function loadExternalEPG(){
     if(!externalEPG){
       const status = $('epgSourceStatus');
       if(status) status.textContent = 'Não foi possível carregar o XMLTV · tentando novamente';
-      setTimeout(()=>{externalEPGPromise=null;},60000);
+      setTimeout(()=>{
+        externalEPGPromise=null;
+        if(state.view==='canais' && !externalEPG){
+          loadExternalEPG().then(()=>{
+            if(state.view==='canais' && externalEPG) loadEPGGrid();
+          });
+        }
+      },60000);
     }
   });
   return externalEPGPromise;
