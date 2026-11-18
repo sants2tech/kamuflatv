@@ -2368,7 +2368,7 @@ async function fetchEPGForChannel(channel){
           const start = parseEPGDate(program.start), stop = parseEPGDate(program.stop);
           return (stop === null || stop >= now - 48*60*60*1000) && (start === null || start <= now + 7*24*60*60*1000);
         })
-        .slice(-240);
+        .slice(0,240);
       if(!result.programs.length) result = null;
     }
   }
@@ -3307,7 +3307,7 @@ function renderPlayerTimeline(){
       if(!programs.length){track.innerHTML='<div class="timeline-empty">Sem dados de EPG neste período</div>';continue;}
       const blocks=programs.map(({p,a,b})=>{
         const left=Math.max(0,(a-start)/(end-start)*100),right=Math.min(100,(b-start)/(end-start)*100),width=Math.max(.5,right-left);
-        const title=b64DecodeUnicode(p.title||'Programa');const current=a<=now&&now<b;
+        const title=p.isTimestamp?b64DecodeUnicode(p.title||'Programa'):String(p.title||'Programa');const current=a<=now&&now<b;
         return `<button type="button" class="timeline-program ${current?'current':''}" style="left:${left}%;width:${width}%" title="${esc(title)} · ${esc(fmtDate.format(new Date(a)))} · ${esc(fmtHour.format(new Date(a)))}–${esc(fmtHour.format(new Date(b)))}" data-program-title="${esc(title)}"><span class="timeline-program-title">${esc(title)}</span><span class="timeline-program-time">${esc(fmtHour.format(new Date(a)))}–${esc(fmtHour.format(new Date(b)))}</span></button>`;
       }).join('');
       const liveLine=now>=start&&now<=end?`<div class="timeline-live-line" style="left:${((now-start)/(end-start))*100}%"></div>`:'';
