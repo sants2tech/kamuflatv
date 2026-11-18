@@ -2455,7 +2455,7 @@ function renderPlayerEPGProgram(programDiv,result,currentTime=Date.now()){
     return;
   }
   const current=selected.current,next=selected.next;
-  programDiv.innerHTML=`<div class="pepg-title"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon icon-svg program-live-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg>${esc(b64DecodeUnicode(current.title))}</div><div class="pepg-time">${esc(formatEPGTime(current.start,current.isTimestamp))} — ${esc(formatEPGTime(current.stop,current.isTimestamp))}${next?' • Próximo: '+esc(b64DecodeUnicode(next.title)):''}</div>`;
+  programDiv.innerHTML=`<div class="pepg-title"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ui-icon icon-svg program-live-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg>${esc((current.isTimestamp ? b64DecodeUnicode(current.title) : String(current.title || 'Programa')))}</div><div class="pepg-time">${esc(formatEPGTime(current.start,current.isTimestamp))} — ${esc(formatEPGTime(current.stop,current.isTimestamp))}${next?' • Próximo: '+esc((next.isTimestamp ? b64DecodeUnicode(next.title) : String(next.title || 'Programa'))):''}</div>`;
 }
 
 function renderEPGProgram(programDiv,result,currentTime=Date.now()){
